@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Cloud Storage</title>
+</head>
+<body>
+    <h1>My Cloud Storage - Облачное хранилище</h1>
+    <p>Веб-приложение для хранения и управления файлами</p>
+
+    <h2>Доступные функции:</h2>
+    <ul>
+        <li><a href="/api/auth/register/">Регистрация пользователя</a></li>
+        <li><a href="/api/auth/login/">Вход в систему</a></li>
+        <li><a href="/admin/">Административная панель</a></li>
+        <li><a href="/api/storage/">Файловое хранилище (требуется авторизация)</a></li>
+    </ul>
+
+    <h2>API endpoints:</h2>
+    <ul>
+        <li>POST /api/auth/register/ - регистрация</li>
+        <li>POST /api/auth/login/ - вход</li>
+        <li>POST /api/auth/logout/ - выход</li>
+        <li>GET /api/auth/users/ - список пользователей (админ)</li>
+        <li>GET,POST /api/storage/ - работа с файлами</li>
+    </ul>
+</body>
+</html>
