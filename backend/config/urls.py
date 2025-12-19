@@ -9,7 +9,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('users.urls')),
     path('api/storage/', include('storage.urls')),
-    re_path(r'^(?!api/|admin/|media/|static/).*$', home),
+    re_path(r'^(?!api/|admin/|media/|static/).*$', home),  # Для SPA
 ]
 
 if settings.DEBUG:
