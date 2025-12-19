@@ -1,95 +1,165 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
+import { loginUser, clearError } from '../store/slices/authSlice';
 
-function Login() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+const Login = () => {
+  const [formData, setFormData] = useState({
+    username: '',
+    password: ''
+  });
+  const [validationErrors, setValidationErrors] = useState({});
+
+  const { loading, error, user } = useSelector((state) => state.auth);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  useEffect(() => {
+    if (user) {
+      navigate('/storage');
+    }
+  }, [user, navigate]);
 
-    try {
-      const response = await fetch('/api/auth/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-        credentials: 'include', // Важно для сессий и куки
-      });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
 
-      const data = await response.json();
-      console.log('Login response:', data); // Для отладки
-
-      if (response.ok && data.success) {
-        // Сохраняем информацию о пользователе
-        localStorage.setItem('user', JSON.stringify(data.user));
-        // Перенаправляем на главную страницу
-        window.location.href = '/'; // Используем полную перезагрузку для обновления состояния
-      } else {
-        setError(data.error || data.message || 'Ошибка входа');
-      }
-    } catch (err) {
-      console.error('Login error:', err);
-      setError('Ошибка соединения с сервером');
-    } finally {
-      setLoading(false);
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+    if (error) {
+      dispatch(clearError());
     }
   };
 
+  const validateForm = () => {
+    const errors = {};
+
+    if (!formData.username.trim()) {
+      errors.username = 'Логин обязателен';
+    }
+
+    if (!formData.password) {
+      errors.password = 'Пароль обязателен';
+    }
+
+    return errors;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+
+    try {
+      await dispatch(loginUser(formData)).unwrap();
+      navigate('/storage');
+    } catch (err) {
+      console.error('Login failed:', err);
+    }
+  };
+
+  // Функция для отображения ошибки
+  const renderError = (error) => {
+    if (!error) return null;
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    if (error.detail) {
+      return error.detail;
+    }
+
+    if (typeof error === 'object') {
+      if (error.non_field_errors) {
+        return Array.isArray(error.non_field_errors)
+          ? error.non_field_errors.join(', ')
+          : error.non_field_errors;
+      }
+
+      // Пробуем преобразовать другие поля ошибки
+      const messages = [];
+      for (const [key, value] of Object.entries(error)) {
+        if (Array.isArray(value)) {
+          messages.push(`${key}: ${value.join(', ')}`);
+        } else if (typeof value === 'string') {
+          messages.push(`${key}: ${value}`);
+        }
+      }
+      return messages.length > 0 ? messages.join('; ') : 'Ошибка при входе';
+    }
+
+    return 'Неизвестная ошибка';
+  };
+
   return (
-    <div className="container">
-      <h2>Вход в систему</h2>
-      {error && <div className="error" style={{ color: 'red', marginBottom: '10px' }}>{error}</div>}
+    <div className="form-container">
+      <h2 className="form-title">Вход в систему</h2>
+
+      {error && (
+        <div className="error-message mb-3">
+          {renderError(error)}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', marginBottom: '5px' }}>Логин:</label>
+        <div className="form-group">
+          <label htmlFor="username" className="form-label">Логин</label>
           <input
             type="text"
-            placeholder="Введите логин"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            id="username"
+            name="username"
+            value={formData.username}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
           />
+          {validationErrors.username && (
+            <div className="error-message">{validationErrors.username}</div>
+          )}
         </div>
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', marginBottom: '5px' }}>Пароль:</label>
+
+        <div className="form-group">
+          <label htmlFor="password" className="form-label">Пароль</label>
           <input
             type="password"
-            placeholder="Введите пароль"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+            id="password"
+            name="password"
+            value={formData.password}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
           />
+          {validationErrors.password && (
+            <div className="error-message">{validationErrors.password}</div>
+          )}
         </div>
+
         <button
           type="submit"
+          className="submit-btn"
           disabled={loading}
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: loading ? 'not-allowed' : 'pointer'
-          }}
         >
           {loading ? 'Вход...' : 'Войти'}
         </button>
       </form>
-      <div style={{ marginTop: '15px', textAlign: 'center' }}>
-        Нет аккаунта? <a href="/register" style={{ color: '#007bff' }}>Зарегистрируйтесь</a>
+
+      <div className="text-center mt-3">
+        <p>Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
       </div>
     </div>
   );
-}
+};
 
 export default Login;

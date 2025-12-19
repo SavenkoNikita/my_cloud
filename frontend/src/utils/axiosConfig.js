@@ -1,42 +1,16 @@
 import axios from 'axios';
 
 const axiosInstance = axios.create({
-  baseURL: '/api',
+  baseURL: 'http://localhost:8000/api',
   withCredentials: true,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
   }
 });
 
-// Интерцептор для добавления CSRF токена
-axiosInstance.interceptors.request.use(
-  (config) => {
-    const csrfToken = getCookie('csrftoken');
-    if (csrfToken && ['post', 'put', 'patch', 'delete'].includes(config.method.toLowerCase())) {
-      config.headers['X-CSRFToken'] = csrfToken;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// Интерцептор для обработки ошибок
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Если 401 - пользователь не авторизован
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
-
-// Функция для получения куки
-function getCookie(name) {
+const getCsrfToken = () => {
+  const name = 'csrftoken';
   let cookieValue = null;
   if (document.cookie && document.cookie !== '') {
     const cookies = document.cookie.split(';');
@@ -49,6 +23,61 @@ function getCookie(name) {
     }
   }
   return cookieValue;
-}
+};
+
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const csrfToken = getCsrfToken();
+    const method = config.method ? config.method.toLowerCase() : 'get';
+
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      if (csrfToken) {
+        config.headers['X-CSRFToken'] = csrfToken;
+      }
+    }
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+axiosInstance.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    if (error.response) {
+      switch (error.response.status) {
+        case 401:
+          console.log('Не авторизован');
+          localStorage.removeItem('user');
+          if (window.location.pathname !== '/login' &&
+              window.location.pathname !== '/register') {
+            window.location.href = '/login';
+          }
+          break;
+        case 403:
+          console.log('Доступ запрещен');
+          break;
+        case 404:
+          console.log('Ресурс не найден');
+          break;
+        case 500:
+          console.log('Ошибка сервера');
+          break;
+        default:
+          console.log('Ошибка:', error.response.status);
+      }
+    } else if (error.request) {
+      console.log('Нет ответа от сервера');
+    } else {
+      console.log('Ошибка запроса:', error.message);
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export default axiosInstance;

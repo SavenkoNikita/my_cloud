@@ -68,9 +68,16 @@ def file_detail(request, pk):
             file.comment = request.data['comment']
             file.save()
             return Response({'message': 'Комментарий обновлен'})
-
-        if 'new_name' in request.data:
-            return Response({'message': 'Функция переименования в разработке'})
+        if 'original_name' in request.data:
+            new_name = request.data['original_name']
+            if not new_name or len(new_name.strip()) == 0:
+                return Response({'error': 'Имя файла не может быть пустым'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            file.original_name = new_name.strip()
+            file.save()
+            return Response({'message': 'Файл переименован'})
+        return Response({'error': 'Неверные данные'},
+                        status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET'])

@@ -1,39 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchFiles, uploadFile, deleteFile, clearFilesError } from '../store/slices/filesSlice';
 
 function StoragePage() {
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
   const [comment, setComment] = useState('');
   const [uploading, setUploading] = useState(false);
-  const { user } = useAuth();
+  const [renamingFileId, setRenamingFileId] = useState(null);
+  const [newFileName, setNewFileName] = useState('');
+  const [editingCommentFileId, setEditingCommentFileId] = useState(null);
+  const [newComment, setNewComment] = useState('');
+
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  const { user, isAuthenticated } = useSelector((state) => state.auth);
+  const { files, loading, error } = useSelector((state) => state.files);
+
   useEffect(() => {
-    if (!user) {
+    if (!isAuthenticated) {
       navigate('/login');
     } else {
-      fetchFiles();
+      dispatch(fetchFiles());
     }
-  }, [user, navigate]);
-
-  const fetchFiles = async () => {
-    try {
-      const response = await fetch('/api/storage/', {
-        credentials: 'include',
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setFiles(data);
-      }
-    } catch (error) {
-      console.error('Error fetching files:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isAuthenticated, navigate, dispatch]);
 
   const handleFileUpload = async (e) => {
     e.preventDefault();
@@ -45,19 +36,10 @@ function StoragePage() {
     formData.append('comment', comment);
 
     try {
-      const response = await fetch('/api/storage/', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const newFile = await response.json();
-        setFiles([newFile, ...files]);
-        setSelectedFile(null);
-        setComment('');
-        e.target.reset();
-      }
+      await dispatch(uploadFile(formData)).unwrap();
+      setSelectedFile(null);
+      setComment('');
+      e.target.reset();
     } catch (error) {
       console.error('Error uploading file:', error);
     } finally {
@@ -69,16 +51,71 @@ function StoragePage() {
     if (!window.confirm('Вы уверены, что хотите удалить этот файл?')) return;
 
     try {
+      await dispatch(deleteFile(fileId)).unwrap();
+    } catch (error) {
+      console.error('Error deleting file:', error);
+    }
+  };
+
+  const handleRenameFile = async (fileId) => {
+    if (!newFileName.trim()) {
+      alert('Введите новое имя файла');
+      return;
+    }
+
+    try {
+      const csrfToken = getCsrfToken();
       const response = await fetch(`/api/storage/${fileId}/`, {
-        method: 'DELETE',
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({ original_name: newFileName.trim() }),
         credentials: 'include',
       });
 
       if (response.ok) {
-        setFiles(files.filter(file => file.id !== fileId));
+        const result = await response.json();
+        alert(result.message || 'Файл переименован');
+
+        dispatch(fetchFiles());
+        setRenamingFileId(null);
+        setNewFileName('');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Ошибка при переименовании файла');
       }
     } catch (error) {
-      console.error('Error deleting file:', error);
+      console.error('Error renaming file:', error);
+      alert('Ошибка при переименовании файла');
+    }
+  };
+
+  const handleUpdateComment = async (fileId) => {
+    try {
+      const csrfToken = getCsrfToken();
+      const response = await fetch(`/api/storage/${fileId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken,
+        },
+        body: JSON.stringify({ comment: newComment.trim() }),
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        dispatch(fetchFiles());
+        setEditingCommentFileId(null);
+        setNewComment('');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Ошибка при обновлении комментария');
+      }
+    } catch (error) {
+      console.error('Error updating comment:', error);
+      alert('Ошибка при обновлении комментария');
     }
   };
 
@@ -102,6 +139,72 @@ function StoragePage() {
     } catch (error) {
       console.error('Error downloading file:', error);
     }
+  };
+
+  const handleCopyShareLink = async (file) => {
+    const shareLink = `${window.location.origin}/api/storage/share/${file.share_link}/`;
+
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      alert('Ссылка скопирована в буфер обмена!');
+    } catch (err) {
+      const textArea = document.createElement('textarea');
+      textArea.value = shareLink;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      alert('Ссылка скопирована в буфер обмена!');
+    }
+  };
+
+  const getCsrfToken = () => {
+    const name = 'csrftoken';
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  };
+
+  const renderError = (error) => {
+    if (!error) return null;
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    if (error.detail) {
+      return error.detail;
+    }
+
+    if (typeof error === 'object') {
+      const messages = [];
+      for (const [key, value] of Object.entries(error)) {
+        if (Array.isArray(value)) {
+          messages.push(`${key}: ${value.join(', ')}`);
+        } else if (typeof value === 'string') {
+          messages.push(`${key}: ${value}`);
+        }
+      }
+      return messages.length > 0 ? messages.join('; ') : 'Ошибка при загрузке файлов';
+    }
+
+    return 'Неизвестная ошибка';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
   };
 
   if (loading) {
@@ -131,13 +234,36 @@ function StoragePage() {
               style={{ width: '100%', padding: '8px' }}
             />
           </div>
-          <button type="submit" disabled={uploading || !selectedFile}>
+          <button
+            type="submit"
+            disabled={uploading || !selectedFile}
+            style={{
+              padding: '10px 20px',
+              background: uploading ? '#ccc' : '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: uploading ? 'not-allowed' : 'pointer'
+            }}
+          >
             {uploading ? 'Загрузка...' : 'Загрузить файл'}
           </button>
         </form>
       </div>
 
       <h3>Мои файлы ({files.length})</h3>
+
+      {error && (
+        <div style={{
+          color: 'red',
+          marginBottom: '10px',
+          padding: '10px',
+          background: '#ffe6e6',
+          borderRadius: '4px'
+        }}>
+          {renderError(error)}
+        </div>
+      )}
 
       {files.length === 0 ? (
         <p>У вас пока нет файлов в хранилище</p>
@@ -156,30 +282,187 @@ function StoragePage() {
             <tbody>
               {files.map(file => (
                 <tr key={file.id} style={{ borderBottom: '1px solid #dee2e6' }}>
-                  <td style={{ padding: '10px' }}>{file.original_name}</td>
                   <td style={{ padding: '10px' }}>
-                    {file.size < 1024 * 1024
-                      ? `${(file.size / 1024).toFixed(2)} KB`
-                      : `${(file.size / (1024 * 1024)).toFixed(2)} MB`
-                    }
+                    {renamingFileId === file.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <input
+                          type="text"
+                          value={newFileName}
+                          onChange={(e) => setNewFileName(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleRenameFile(file.id)}
+                          style={{ padding: '4px', width: '200px' }}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleRenameFile(file.id)}
+                          style={{
+                            background: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 8px',
+                            borderRadius: '3px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRenamingFileId(null);
+                            setNewFileName('');
+                          }}
+                          style={{
+                            background: '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 8px',
+                            borderRadius: '3px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span>{file.original_name}</span>
+                        <button
+                          onClick={() => {
+                            setRenamingFileId(file.id);
+                            setNewFileName(file.original_name);
+                          }}
+                          style={{
+                            background: '#ffc107',
+                            color: '#212529',
+                            border: 'none',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                          title="Переименовать файл"
+                        >
+                          ✎
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px' }}>{formatFileSize(file.size)}</td>
+                  <td style={{ padding: '10px' }}>
+                    {new Date(file.uploaded_at).toLocaleString('ru-RU')}
                   </td>
                   <td style={{ padding: '10px' }}>
-                    {new Date(file.uploaded_at).toLocaleString()}
+                    {editingCommentFileId === file.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <input
+                          type="text"
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleUpdateComment(file.id)}
+                          style={{ padding: '4px', width: '200px' }}
+                          placeholder="Комментарий"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleUpdateComment(file.id)}
+                          style={{
+                            background: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 8px',
+                            borderRadius: '3px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingCommentFileId(null);
+                            setNewComment('');
+                          }}
+                          style={{
+                            background: '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            padding: '4px 8px',
+                            borderRadius: '3px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span>{file.comment || '-'}</span>
+                        <button
+                          onClick={() => {
+                            setEditingCommentFileId(file.id);
+                            setNewComment(file.comment || '');
+                          }}
+                          style={{
+                            background: '#17a2b8',
+                            color: 'white',
+                            border: 'none',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '12px'
+                          }}
+                          title="Изменить комментарий"
+                        >
+                          ✎
+                        </button>
+                      </div>
+                    )}
                   </td>
-                  <td style={{ padding: '10px' }}>{file.comment || '-'}</td>
                   <td style={{ padding: '10px' }}>
-                    <button
-                      onClick={() => handleDownload(file.id, file.original_name)}
-                      style={{ marginRight: '5px', background: '#007bff', color: 'white' }}
-                    >
-                      Скачать
-                    </button>
-                    <button
-                      onClick={() => handleFileDelete(file.id)}
-                      style={{ background: '#dc3545', color: 'white' }}
-                    >
-                      Удалить
-                    </button>
+                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => handleDownload(file.id, file.original_name)}
+                        style={{
+                          marginRight: '5px',
+                          background: '#007bff',
+                          color: 'white',
+                          border: 'none',
+                          padding: '5px 10px',
+                          borderRadius: '3px',
+                          cursor: 'pointer'
+                        }}
+                        title="Скачать файл"
+                      >
+                        📥
+                      </button>
+                      <button
+                        onClick={() => handleCopyShareLink(file)}
+                        style={{
+                          background: '#17a2b8',
+                          color: 'white',
+                          border: 'none',
+                          padding: '5px 10px',
+                          borderRadius: '3px',
+                          cursor: 'pointer'
+                        }}
+                        title="Копировать ссылку для общего доступа"
+                      >
+                        🔗
+                      </button>
+                      <button
+                        onClick={() => handleFileDelete(file.id)}
+                        style={{
+                          background: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          padding: '5px 10px',
+                          borderRadius: '3px',
+                          cursor: 'pointer'
+                        }}
+                        title="Удалить файл"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

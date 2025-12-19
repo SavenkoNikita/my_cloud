@@ -1,104 +1,239 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
+import { registerUser, clearError } from '../store/slices/authSlice';
 
-function Register() {
+const Register = () => {
   const [formData, setFormData] = useState({
     username: '',
-    password: '',
     email: '',
-    full_name: ''
+    full_name: '',
+    password: '',
+    password_confirm: ''
   });
-  const [errors, setErrors] = useState({});
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
+
+  const { loading, error, user } = useSelector((state) => state.auth);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (user) {
+      navigate('/storage');
+    }
+  }, [user, navigate]);
+
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+    if (error) {
+      dispatch(clearError());
+    }
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    const usernameRegex = /^[a-zA-Z][a-zA-Z0-9]{3,19}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$/;
+
+    if (!formData.username.trim()) {
+      errors.username = 'Логин обязателен';
+    } else if (!usernameRegex.test(formData.username)) {
+      errors.username = 'Логин должен начинаться с буквы, содержать только латинские буквы и цифры, длиной 4-20 символов';
+    }
+
+    if (!formData.email.trim()) {
+      errors.email = 'Email обязателен';
+    } else if (!emailRegex.test(formData.email)) {
+      errors.email = 'Введите корректный email адрес';
+    }
+
+    if (!formData.full_name.trim()) {
+      errors.full_name = 'Полное имя обязательно';
+    } else if (formData.full_name.length < 2) {
+      errors.full_name = 'Имя должно содержать минимум 2 символа';
+    }
+
+    if (!formData.password) {
+      errors.password = 'Пароль обязателен';
+    } else if (!passwordRegex.test(formData.password)) {
+      errors.password = 'Пароль должен содержать минимум 6 символов, одну заглавную букву, одну цифру и один специальный символ';
+    }
+
+    if (!formData.password_confirm) {
+      errors.password_confirm = 'Подтверждение пароля обязательно';
+    } else if (formData.password !== formData.password_confirm) {
+      errors.password_confirm = 'Пароли не совпадают';
+    }
+
+    return errors;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setErrors({});
-    setMessage('');
-    setLoading(true);
+
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+
+    const { password_confirm, ...submitData } = formData;
 
     try {
-      const response = await fetch('/api/auth/register/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setMessage('Регистрация успешна! Перенаправляем на страницу входа...');
-        setTimeout(() => navigate('/login'), 2000);
-      } else {
-        setErrors(data);
-      }
+      await dispatch(registerUser(submitData)).unwrap();
+      navigate('/storage');
     } catch (err) {
-      setErrors({ general: 'Ошибка соединения' });
-    } finally {
-      setLoading(false);
+      console.error('Registration failed:', err);
     }
   };
 
+  // Функция для отображения ошибки
+  const renderError = (error) => {
+    if (!error) return null;
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    if (error.detail) {
+      return error.detail;
+    }
+
+    if (typeof error === 'object') {
+      const messages = [];
+      for (const [key, value] of Object.entries(error)) {
+        if (Array.isArray(value)) {
+          messages.push(`${key}: ${value.join(', ')}`);
+        } else if (typeof value === 'string') {
+          messages.push(`${key}: ${value}`);
+        }
+      }
+      return messages.length > 0 ? messages.join('; ') : 'Ошибка при регистрации';
+    }
+
+    return 'Неизвестная ошибка';
+  };
+
   return (
-    <div className="container">
-      <h2>Регистрация</h2>
-      {message && <div className="success">{message}</div>}
+    <div className="form-container">
+      <h2 className="form-title">Регистрация</h2>
+
+      {error && (
+        <div className="error-message mb-3">
+          {renderError(error)}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          name="username"
-          placeholder="Логин"
-          value={formData.username}
-          onChange={handleChange}
-          required
-        />
-        {errors.username && <div className="error">{errors.username}</div>}
+        {/* ... остальная часть формы без изменений ... */}
+        <div className="form-group">
+          <label htmlFor="username" className="form-label">Логин*</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            value={formData.username}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
+            placeholder="Только латинские буквы и цифры, 4-20 символов"
+          />
+          {validationErrors.username && (
+            <div className="error-message">{validationErrors.username}</div>
+          )}
+        </div>
 
-        <input
-          type="password"
-          name="password"
-          placeholder="Пароль"
-          value={formData.password}
-          onChange={handleChange}
-          required
-        />
-        {errors.password && <div className="error">{errors.password}</div>}
+        <div className="form-group">
+          <label htmlFor="email" className="form-label">Email*</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            value={formData.email}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
+          />
+          {validationErrors.email && (
+            <div className="error-message">{validationErrors.email}</div>
+          )}
+        </div>
 
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={formData.email}
-          onChange={handleChange}
-          required
-        />
-        {errors.email && <div className="error">{errors.email}</div>}
+        <div className="form-group">
+          <label htmlFor="full_name" className="form-label">Полное имя*</label>
+          <input
+            type="text"
+            id="full_name"
+            name="full_name"
+            value={formData.full_name}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
+          />
+          {validationErrors.full_name && (
+            <div className="error-message">{validationErrors.full_name}</div>
+          )}
+        </div>
 
-        <input
-          type="text"
-          name="full_name"
-          placeholder="Полное имя"
-          value={formData.full_name}
-          onChange={handleChange}
-          required
-        />
-        {errors.full_name && <div className="error">{errors.full_name}</div>}
+        <div className="form-group">
+          <label htmlFor="password" className="form-label">Пароль*</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            value={formData.password}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
+            placeholder="Минимум 6 символов, заглавная, цифра, спецсимвол"
+          />
+          {validationErrors.password && (
+            <div className="error-message">{validationErrors.password}</div>
+          )}
+        </div>
 
-        <button type="submit" disabled={loading}>
+        <div className="form-group">
+          <label htmlFor="password_confirm" className="form-label">Подтверждение пароля*</label>
+          <input
+            type="password"
+            id="password_confirm"
+            name="password_confirm"
+            value={formData.password_confirm}
+            onChange={handleChange}
+            className="form-input"
+            disabled={loading}
+          />
+          {validationErrors.password_confirm && (
+            <div className="error-message">{validationErrors.password_confirm}</div>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          className="submit-btn"
+          disabled={loading}
+        >
           {loading ? 'Регистрация...' : 'Зарегистрироваться'}
         </button>
       </form>
+
+      <div className="text-center mt-3">
+        <p>Уже есть аккаунт? <a href="/login">Войти</a></p>
+      </div>
     </div>
   );
-}
+};
 
 export default Register;
