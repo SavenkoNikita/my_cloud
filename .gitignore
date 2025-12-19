@@ -72,3 +72,8 @@ frontend/.parcel-cache/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+# Test files
+test_*.py
+*test_file*.txt
+downloaded_*.txt
+shared_*.txt
