@@ -60,7 +60,7 @@ ALLOWED_HOSTS=ваш_домен.ru
 ```
 ### Миграции и статические файлы
 ```bash
-cd /var/www/my_cloud/backend
+cd /var/my_cloud/backend
 python manage.py migrate
 python manage.py collectstatic --noinput
 python manage.py createsuperuser
